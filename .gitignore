@@ -1,0 +1,10 @@
+*
+*.*
+!.gitignore
+!*/
+!*.rs
+!Cargo.toml
+!Cargo.lock
+/target
+
+.vscode/
