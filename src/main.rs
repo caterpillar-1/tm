@@ -3,8 +3,6 @@ mod pda;
 mod tm;
 
 use clap::Parser;
-use core::{arch, panic};
-use pda::ArchState;
 use std::io::Read;
 
 #[derive(clap::Parser, Debug)]

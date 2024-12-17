@@ -347,7 +347,7 @@ impl std::str::FromStr for TuringMachine {
                         p[2].chars().collect(),
                         match parse_directions(p[3]) {
                             Ok(v) => v,
-                            Err(e) => {
+                            Err(_) => {
                                 return Err(ParseError {
                                     error: ParseErrorType::TransitionDeclFormat,
                                     pc,
@@ -659,7 +659,7 @@ impl std::fmt::Display for ArchState {
                 write!(f, "{:>3}", tape[pos])?;
             }
             writeln!(f, "")?;
-            writeln!(f, "Head{:<3}: {}", i, "   ".repeat(head.1) + " ^")?;
+            writeln!(f, "Head{:<3}: {}", i, "   ".repeat(head.1) + "  ^")?;
         }
         writeln!(f, "State  : {}", self.state)?;
         Ok(())
