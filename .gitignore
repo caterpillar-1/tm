@@ -5,6 +5,7 @@
 !*.rs
 !Cargo.toml
 !Cargo.lock
+!*.md
 /target
 
 .vscode/
