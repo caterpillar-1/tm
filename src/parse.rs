@@ -28,12 +28,13 @@ pub enum ParseErrorType {
 }
 
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct ParseError {
-    pub error: ParseErrorType,
-    pub inst: String,
-    pub row: usize,
-    pub col: usize,
-    pub msg: String,
+    error: ParseErrorType,
+    inst: String,
+    row: usize,
+    col: usize,
+    msg: String,
 }
 
 fn parse_set(s: &str) -> Option<HashSet<String>> {
@@ -149,5 +150,5 @@ pub fn valid_state_char(c: char) -> bool {
 }
 
 pub fn valid_symbol_char(c: char) -> bool {
-    c.is_ascii_graphic() && ![' ', ',', ';', '{', '}', '*'].contains(&c)    
+    c.is_ascii_graphic() && ![' ', ',', ';', '{', '}', '*'].contains(&c)
 }

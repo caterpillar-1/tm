@@ -503,7 +503,8 @@ pub struct ArchState {
 pub enum Exception {
     InvalidInput { input: String, offset: usize },
     RepeatedInput,
-    Halt { accept: bool },
+    Reject,
+    Accept,
 }
 
 impl ArchState {
@@ -535,7 +536,7 @@ impl ArchState {
                 if self.tapes[0].is_empty() {
                     self.tapes[0] = VecDeque::from([self.tm.B()])
                 }
-            },
+            }
             Err(offset) => {
                 return Err(Exception::InvalidInput {
                     input: s.to_owned(),
@@ -547,6 +548,10 @@ impl ArchState {
     }
 
     pub fn step(&mut self) -> Result<(), Exception> {
+        if self.tm.F().contains(&self.state) {
+            self.halt = true;
+            return Err(Exception::Accept);
+        }
         match self.tm.get(
             &self.state,
             &self
@@ -600,9 +605,7 @@ impl ArchState {
             }
             None => {
                 self.halt = true;
-                Err(Exception::Halt {
-                    accept: self.tm.F().contains(&self.state),
-                })
+                Err(Exception::Reject)
             }
         }
     }
@@ -625,19 +628,8 @@ impl ArchState {
                         break;
                     }
                 }
-                Some(
-                    tape.iter()
-                        .map(|c| if *c == self.tm.B() { ' ' } else { *c })
-                        .collect(),
-                )
+                Some(tape.iter().collect())
             }
-            false => None,
-        }
-    }
-
-    pub fn accept(&self) -> Option<bool> {
-        match self.halt {
-            true => Some(self.tm.F().contains(&self.state)),
             false => None,
         }
     }
@@ -649,17 +641,29 @@ impl std::fmt::Display for ArchState {
         for i in 0..self.tm.N() {
             let head = &self.heads[i];
             let tape = &self.tapes[i];
+            let indices: Vec<_> = (0..tape.len())
+                .map(|pos| (pos as isize + head.0 - head.1 as isize).abs())
+                .collect();
+            let widths: Vec<_> = indices
+                .iter()
+                .map(|idx| idx.to_string().len() + 1)
+                .collect();
             write!(f, "Index{:<2}: ", i)?;
-            for pos in 0..tape.len() {
-                write!(f, "{:>3}", (pos as isize + head.0 - head.1 as isize).abs())?;
+            for (pos, width) in indices.iter().zip(widths.iter()) {
+                write!(f, "{:<width$}", pos, width = width)?;
             }
             writeln!(f, "")?;
             write!(f, "Tape{:<3}: ", i)?;
-            for pos in 0..tape.len() {
-                write!(f, "{:>3}", tape[pos])?;
+            for (pos, width) in (0..tape.len()).zip(widths.iter()) {
+                write!(f, "{:<width$}", tape[pos], width = width)?;
             }
             writeln!(f, "")?;
-            writeln!(f, "Head{:<3}: {}", i, "   ".repeat(head.1) + "  ^")?;
+            writeln!(
+                f,
+                "Head{:<3}: {}",
+                i,
+                " ".repeat(widths[..head.1].iter().sum()) + "^"
+            )?;
         }
         writeln!(f, "State  : {}", self.state)?;
         Ok(())

@@ -1,5 +1,7 @@
 mod parse;
+#[allow(non_snake_case, non_camel_case_types, unused)]
 mod pda;
+#[allow(non_snake_case, non_camel_case_types, unused)]
 mod tm;
 
 use clap::Parser;
@@ -81,21 +83,18 @@ fn main() {
             use pda::Exception::*;
             match arch_state.step() {
                 Ok(_) => {}
-                Err(e) => {
+                Err(e @ (Accept | Reject)) => {
                     match e {
                         Accept => println!("true"),
                         Reject => println!("false"),
-                        EmptyStack => eprintln!("error: empty stack!"),
-                        Halt => eprintln!("error: halt!"),
-                        _ => panic!()
+                        _ => panic!(),
                     }
-                    match e {
-                        EmptyStack | Halt => std::process::exit(1),
-                        _ => ()
+                    if args.verbose {
+                        println!("{}", banner_end);
                     }
-                    println!("{}", banner_end);
-                    break;
+                    std::process::exit(0);
                 }
+                _ => panic!(),
             }
         }
     } else if args.program.ends_with(".tm") {
@@ -147,36 +146,28 @@ fn main() {
 
         if args.verbose {
             println!("{}", banner_run);
-            loop {
+        }
+        loop {
+            if args.verbose {
                 print!("{}", arch_state);
                 println!("{}", banner_split);
-
-                use tm::Exception::*;
-                match arch_state.step() {
-                    Ok(_) => {}
-                    Err(e) => {
-                        match e {
-                            Halt { accept } => {
-                                // match accept {
-                                //     true => {
-                                //         println!("Result: {}", arch_state.result().unwrap());
-                                //     }
-                                //     false => {
-                                //         println!("error: halt!");
-                                //     }
-                                // }
-                                println!("Result: {}", arch_state.result().unwrap());
-                            }
-                            _ => panic!(),
-                        }
-                        println!("{}", banner_end);
-                        break;
-                    }
-                }
             }
-        } else {
-            while let Ok(_) = arch_state.step() {}
-            println!("{}", arch_state.result().unwrap())
+
+            use tm::Exception::*;
+            match arch_state.step() {
+                Ok(_) => {}
+                Err(Accept | Reject) => {
+                    if args.verbose {
+                        print!("Result: ");
+                    }
+                    println!("{}", arch_state.result().unwrap());
+                    if args.verbose {
+                        println!("{}", banner_end);
+                    }
+                    std::process::exit(0);
+                }
+                _ => panic!(),
+            }
         }
     } else {
         log::error!("machine is not pda or tm");

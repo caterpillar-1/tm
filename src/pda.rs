@@ -275,10 +275,8 @@ pub struct ArchState {
 #[derive(Debug, Clone)]
 pub enum Exception {
     InvalidInput { col: usize },
-    Halt,
     Accept,
     Reject,
-    EmptyStack,
 }
 
 impl ArchState {
@@ -300,10 +298,13 @@ impl ArchState {
 
     pub fn step(&mut self) -> Result<(), Exception> {
         let q = &self.state;
+        if self.input.is_empty() && self.pda.F().contains(q) {
+            return Err(Exception::Accept);
+        }
         let a = self.input.front();
         let X = match self.stack.front() {
             Some(X) => *X,
-            None => return Err(Exception::EmptyStack),
+            None => return Err(Exception::Reject),
         };
         if let Some((used, (p, beta))) = self.pda.get(q, a.copied(), X) {
             if used.is_some() {
@@ -317,15 +318,7 @@ impl ArchState {
             self.step += 1;
             Ok(())
         } else {
-            Err(if !self.input.is_empty() {
-                Exception::Halt
-            } else {
-                if self.pda.F().contains(&self.state) {
-                    Exception::Accept
-                } else {
-                    Exception::Reject
-                }
-            })
+            return Err(Exception::Reject);
         }
     }
 }
