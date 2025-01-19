@@ -1,0 +1,115 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Run with default testcase for 'tm'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fla",
+                    "--package=fla"
+                ],
+                "filter": {
+                    "name": "fla",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-v", "./tm/palindrome_detector_2tapes.tm", "101110"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Run with default testcase for 'pda'",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fla",
+                    "--package=fla"
+                ],
+                "filter": {
+                    "name": "fla",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-v", "./pda/anbn.pda", "aaabbbb"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "case (pda)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fla",
+                    "--package=fla"
+                ],
+                "filter": {
+                    "name": "fla",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-v", "./pda/case.pda", "()()((()())())"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "case1 (tm)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fla",
+                    "--package=fla"
+                ],
+                "filter": {
+                    "name": "fla",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-v", "./tm/case1.tm", "aaabbb"],
+            "cwd": "${workspaceFolder}"
+        },
+
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "case2 (tm)",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=fla",
+                    "--package=fla"
+                ],
+                "filter": {
+                    "name": "fla",
+                    "kind": "bin"
+                }
+            },
+            "args": ["-v", "./tm/case2.tm", "1111"],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug unit tests in executable 'turing'",
+            "cargo": {
+                "args": [
+                    "test",
+                    "--no-run",
+                    "--bin=turing",
+                    "--package=turing"
+                ],
+                "filter": {
+                    "name": "turing",
+                    "kind": "bin"
+                }
+            },
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+}

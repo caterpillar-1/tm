@@ -8,4 +8,4 @@
 !*.md
 /target
 
-.vscode/
+!.vscode/launch.json
