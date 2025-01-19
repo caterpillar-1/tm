@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use crate::parse::{self, parse, valid_state_char, valid_symbol_char, Value};
+use crate::parse::{self, parse, valid_state_char, valid_symbol_char, Position, Value};
 
 pub type State = String;
 pub type InputSymbol = char;
@@ -25,15 +25,6 @@ pub struct PushDownAutomata {
 }
 
 impl PushDownAutomata {
-    pub fn input_valid(&self, s: &str) -> Result<(), usize> {
-        for (col, ch) in s.chars().enumerate() {
-            if !self.S.contains(&ch) {
-                return Err(col);
-            }
-        }
-        Ok(())
-    }
-
     pub fn Q(&self) -> &HashSet<State> {
         &self.Q
     }
@@ -66,7 +57,7 @@ impl PushDownAutomata {
         if let Some(r) = self.delta.get(&query) {
             return Some((query.1, r));
         }
-        if matches!(query.1, Some(_)) {
+        if query.1.is_some() {
             query.1 = None;
         }
         if let Some(r) = self.delta.get(&query) {
@@ -77,6 +68,7 @@ impl PushDownAutomata {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum SpecError {
     DeclItem(HashSet<String>),
     Type(String),
@@ -93,20 +85,21 @@ pub enum SpecError {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub enum ParseError {
     Syntax(parse::ParseError),
     Spec(SpecError),
 }
 
 impl FromStr for PushDownAutomata {
-    type Err = ParseError;
+    type Err = (Position, ParseError);
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut pda = Self::default();
 
         let mut c = match parse(s, 5) {
             Ok(c) => c,
-            Err(e) => return Err(ParseError::Syntax(e)),
+            Err((pos, e)) => return Err((pos, ParseError::Syntax(e))),
         };
 
         let decl_items_ref = HashSet::from(["Q", "S", "G", "q0", "z0", "F"]);
@@ -117,16 +110,19 @@ impl FromStr for PushDownAutomata {
             .collect::<HashSet<_>>();
 
         if decl_items_dut != decl_items_ref {
-            return Err(ParseError::Spec(SpecError::DeclItem(
-                decl_items_dut
-                    .symmetric_difference(&decl_items_ref)
-                    .map(|s| (*s).to_owned())
-                    .collect(),
-            )));
+            return Err((
+                Position::default(),
+                ParseError::Spec(SpecError::DeclItem(
+                    decl_items_dut
+                        .symmetric_difference(&decl_items_ref)
+                        .map(|s| (*s).to_owned())
+                        .collect(),
+                )),
+            ));
         }
 
         for k in decl_items_ref {
-            let (k, v) = c.store.remove_entry(k).unwrap();
+            let (k, (pos, v)) = c.store.remove_entry(k).unwrap();
             fn valid_states(states: &HashSet<String>) -> Result<(), ParseError> {
                 for state in states.iter() {
                     for ch in state.chars() {
@@ -143,20 +139,23 @@ impl FromStr for PushDownAutomata {
                         match k.as_str() {
                             "Q" => {
                                 if let Err(e) = valid_states(&v) {
-                                    return Err(e);
+                                    return Err((pos, e));
                                 }
                                 pda.Q = v;
                             }
                             "S" => {
                                 for symbol in v.iter() {
                                     if symbol.len() != 1 {
-                                        return Err(ParseError::Spec(SpecError::MultiCharSymbol(
-                                            symbol.to_owned(),
-                                        )));
+                                        return Err((
+                                            pos,
+                                            ParseError::Spec(SpecError::MultiCharSymbol(
+                                                symbol.to_owned(),
+                                            )),
+                                        ));
                                     }
                                     let ch = symbol.chars().nth(0).unwrap();
                                     if !valid_symbol_char(ch) || ch == '_' {
-                                        return Err(ParseError::Spec(SpecError::SChar(ch)));
+                                        return Err((pos, ParseError::Spec(SpecError::SChar(ch))));
                                     }
                                     pda.S.insert(ch);
                                 }
@@ -164,27 +163,30 @@ impl FromStr for PushDownAutomata {
                             "G" => {
                                 for symbol in v.iter() {
                                     if symbol.len() != 1 {
-                                        return Err(ParseError::Spec(SpecError::MultiCharSymbol(
-                                            symbol.to_owned(),
-                                        )));
+                                        return Err((
+                                            pos,
+                                            ParseError::Spec(SpecError::MultiCharSymbol(
+                                                symbol.to_owned(),
+                                            )),
+                                        ));
                                     }
                                     let ch = symbol.chars().nth(0).unwrap();
                                     if !valid_symbol_char(ch) || ch == '_' {
-                                        return Err(ParseError::Spec(SpecError::GChar(ch)));
+                                        return Err((pos, ParseError::Spec(SpecError::GChar(ch))));
                                     }
                                     pda.G.insert(ch);
                                 }
                             }
                             "F" => {
                                 if let Err(e) = valid_states(&v) {
-                                    return Err(e);
+                                    return Err((pos, e));
                                 }
                                 pda.F = v;
                             }
                             _ => panic!(),
                         }
                     } else {
-                        return Err(ParseError::Spec(SpecError::Type(k.to_owned())));
+                        return Err((pos, ParseError::Spec(SpecError::Type(k.to_owned()))));
                     }
                 }
                 "q0" | "z0" => {
@@ -193,14 +195,17 @@ impl FromStr for PushDownAutomata {
                             "q0" => pda.q0 = v,
                             "z0" => {
                                 if v.len() != 1 {
-                                    return Err(ParseError::Spec(SpecError::MultiCharSymbol(v)));
+                                    return Err((
+                                        pos,
+                                        ParseError::Spec(SpecError::MultiCharSymbol(v)),
+                                    ));
                                 }
                                 pda.z0 = v.chars().nth(0).unwrap();
                             }
                             _ => panic!(),
                         }
                     } else {
-                        return Err(ParseError::Spec(SpecError::Type(k.to_owned())));
+                        return Err((pos, ParseError::Spec(SpecError::Type(k.to_owned()))));
                     }
                 }
                 _ => panic!(),
@@ -208,27 +213,36 @@ impl FromStr for PushDownAutomata {
         }
 
         if !pda.Q.contains(&pda.q0) {
-            return Err(ParseError::Spec(SpecError::q0NotInQ));
+            return Err((Position::default(), ParseError::Spec(SpecError::q0NotInQ)));
         }
 
         if !pda.G.contains(&pda.z0) {
-            return Err(ParseError::Spec(SpecError::z0NotInG));
+            return Err((Position::default(), ParseError::Spec(SpecError::z0NotInG)));
         }
 
         if !pda.F.is_subset(&pda.Q) {
-            return Err(ParseError::Spec(SpecError::FNotSubsetQ));
+            return Err((
+                Position::default(),
+                ParseError::Spec(SpecError::FNotSubsetQ),
+            ));
         }
 
-        for t in c.trans {
+        for (pos, t) in c.trans {
             if let [q, a, X, p, beta] = &t[..] {
                 for state in [p, q] {
                     if !pda.Q.contains(state) {
-                        return Err(ParseError::Spec(SpecError::TInvalidState(state.to_owned())));
+                        return Err((
+                            pos,
+                            ParseError::Spec(SpecError::TInvalidState(state.to_owned())),
+                        ));
                     }
                 }
                 for ch in [a, X] {
                     if ch.len() != 1 {
-                        return Err(ParseError::Spec(SpecError::MultiCharSymbol(ch.to_owned())));
+                        return Err((
+                            pos,
+                            ParseError::Spec(SpecError::MultiCharSymbol(ch.to_owned())),
+                        ));
                     }
                 }
                 let a = a.chars().nth(0).unwrap();
@@ -236,14 +250,14 @@ impl FromStr for PushDownAutomata {
                     '_' => None,
                     a => {
                         if !pda.S.contains(&a) {
-                            return Err(ParseError::Spec(SpecError::TInvalidSymbol(a)));
+                            return Err((pos, ParseError::Spec(SpecError::TInvalidSymbol(a))));
                         }
                         Some(a)
                     }
                 };
                 let X = X.chars().nth(0).unwrap();
                 if X == '_' {
-                    return Err(ParseError::Spec(SpecError::TInvalidSymbol(X)));
+                    return Err((pos, ParseError::Spec(SpecError::TInvalidSymbol(X))));
                 }
                 let beta = match beta.as_str() {
                     "_" => Vec::new(),
@@ -251,12 +265,12 @@ impl FromStr for PushDownAutomata {
                 };
                 for ch in &beta {
                     if !pda.G.contains(ch) {
-                        return Err(ParseError::Spec(SpecError::TInvalidSymbol(*ch)));
+                        return Err((pos, ParseError::Spec(SpecError::TInvalidSymbol(*ch))));
                     }
                 }
                 pda.delta.insert((q.to_owned(), a, X), (p.to_owned(), beta));
             } else {
-                return Err(ParseError::Spec(SpecError::TLen(t)));
+                return Err((pos, ParseError::Spec(SpecError::TLen(t))));
             }
         }
 
@@ -273,38 +287,46 @@ pub struct ArchState {
 }
 
 #[derive(Debug, Clone)]
-pub enum Exception {
+pub(crate) enum Exception {
     InvalidInput { col: usize },
     Accept,
     Reject,
 }
 
 impl ArchState {
-    pub fn new(pda: PushDownAutomata, input: &str) -> Result<Self, Exception> {
+    pub fn new(pda: PushDownAutomata) -> Self {
         let q0 = pda.q0.clone();
-        let z0 = pda.z0.clone();
-        match pda.input_valid(input) {
-            Ok(_) => (),
-            Err(col) => return Err(Exception::InvalidInput { col }),
-        }
-        Ok(ArchState {
+        let z0 = pda.z0;
+        ArchState {
             pda,
             step: 0,
             state: q0,
-            input: input.chars().collect(),
+            input: VecDeque::new(),
             stack: VecDeque::from([z0]),
-        })
+        }
+    }
+}
+
+impl super::ArchState for ArchState {
+    fn input(&mut self, s: &str) -> Result<(), super::Exception> {
+        for (col, ch) in s.chars().enumerate() {
+            if !self.pda.S.contains(&ch) {
+                return Err(super::Exception::Pda(Exception::InvalidInput { col }));
+            }
+        }
+        self.input = VecDeque::from_iter(s.chars());
+        Ok(())
     }
 
-    pub fn step(&mut self) -> Result<(), Exception> {
+    fn step(&mut self) -> Result<(), super::Exception> {
         let q = &self.state;
         if self.input.is_empty() && self.pda.F().contains(q) {
-            return Err(Exception::Accept);
+            return Err(super::Exception::Pda(Exception::Accept));
         }
         let a = self.input.front();
         let X = match self.stack.front() {
             Some(X) => *X,
-            None => return Err(Exception::Reject),
+            None => return Err(super::Exception::Pda(Exception::Reject)),
         };
         if let Some((used, (p, beta))) = self.pda.get(q, a.copied(), X) {
             if used.is_some() {
@@ -318,7 +340,7 @@ impl ArchState {
             self.step += 1;
             Ok(())
         } else {
-            return Err(Exception::Reject);
+            Err(super::Exception::Pda(Exception::Reject))
         }
     }
 }

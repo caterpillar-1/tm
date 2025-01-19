@@ -12,58 +12,72 @@ impl Default for Value {
     }
 }
 
-pub type KVStore = HashMap<String, Value>;
+pub type KVStore = HashMap<String, (Position, Value)>;
 
 #[derive(Default)]
 pub struct Config {
     pub store: KVStore,
-    pub trans: Vec<Vec<String>>,
+    pub trans: Vec<(Position, Vec<String>)>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub enum ParseErrorType {
+#[derive(Default, Debug, Clone)]
+pub enum ParseErrorKV {
     #[default]
-    KV,
+    Unknown,
+    Str,
+    Set,
+}
+
+#[derive(Debug, Clone)]
+pub enum ParseError {
+    KV(ParseErrorKV),
     Trans,
 }
 
-#[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
-pub struct ParseError {
-    error: ParseErrorType,
-    inst: String,
-    row: usize,
-    col: usize,
-    msg: String,
+#[derive(Clone, Debug, Default)]
+pub struct Position {
+    pub inst: String,
+    pub row: usize,
+    pub col: usize,
 }
 
-fn parse_set(s: &str) -> Option<HashSet<String>> {
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        writeln!(f, "line {}, col {}:", self.row, self.col)?;
+        writeln!(f, "{}", self.inst)?;
+        writeln!(f, "{}", " ".repeat(self.col) + "^")
+    }
+}
+
+fn parse_set(line: &str) -> Result<HashSet<String>, (bool, usize)> /* Err(confident, col) */ {
     fn valid_item_char(c: char) -> bool {
         c.is_ascii_graphic() && ![',', ';', '{', '}'].contains(&c)
     }
 
-    let s = s.trim();
+    let s = line.trim();
     if s.is_empty() {
-        return None;
+        return Err((false, 0));
     }
 
-    if s.chars().next()? != '{' || s.chars().next_back()? != '}' {
-        return None;
+    if !s.starts_with('{') || !s.ends_with('}') {
+        return Err((false, 0));
     }
 
     let items: HashSet<String> = s
-        .strip_prefix('{')?
-        .strip_suffix('}')?
+        .strip_prefix('{')
+        .unwrap()
+        .strip_suffix('}')
+        .unwrap()
         .split(',')
         .map(|item| item.trim().to_owned())
         .collect();
     match items.iter().all(|item| item.chars().all(valid_item_char)) {
-        true => Some(items),
-        false => None,
+        true => Ok(items),
+        false => Err((true, 0)),
     }
 }
 
-fn parse_str(s: &str) -> Option<String> {
+fn parse_str(s: &str) -> Result<String, usize> {
     fn valid_str_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || c == '_'
     }
@@ -71,21 +85,26 @@ fn parse_str(s: &str) -> Option<String> {
     let s = s.trim();
 
     if s.is_empty() {
-        return None;
+        return Err(0);
     }
 
-    match s.chars().all(valid_str_char) {
-        true => Some(s.to_owned()),
-        false => None,
+    for (col, c) in s.chars().enumerate() {
+        if !valid_str_char(c) {
+            return Err(col);
+        }
     }
+    Ok(s.to_owned())
 }
 
-fn parse_trans(s: &str) -> Option<Vec<String>> {
-    let segs = s.trim().split_whitespace().map(|s| s.to_owned()).collect();
+fn parse_trans(s: &str, nr_trans_item: usize) -> Option<Vec<String>> {
+    let segs: Vec<_> = s.split_whitespace().map(|s| s.to_owned()).collect();
+    if segs.len() != nr_trans_item {
+        return None;
+    }
     Some(segs)
 }
 
-pub fn parse(s: &str, nr_trans_item: usize) -> Result<Config, ParseError> {
+pub fn parse(s: &str, nr_trans_item: usize) -> Result<Config, (Position, ParseError)> {
     let mut c = Config::default();
     for (row, line) in s.lines().enumerate() {
         let inst = match line.split_once(';') {
@@ -98,47 +117,63 @@ pub fn parse(s: &str, nr_trans_item: usize) -> Result<Config, ParseError> {
             continue;
         }
 
-        if inst.chars().nth(0).unwrap() == '#' {
+        let pos = Position {
+            inst: line.to_owned(),
+            row,
+            ..Default::default()
+        };
+        if inst.starts_with('#') {
             // KVStore
-            let err = Err(ParseError {
-                error: ParseErrorType::KV,
-                inst: line.to_owned(),
-                row,
-                ..Default::default()
-            });
             let inst = inst.strip_prefix('#').unwrap();
             if let Some((ks, vs)) = inst.split_once('=') {
+                let margin = ks.len() + 2;
                 let ks = ks.trim();
                 let vs = vs.trim();
-                let v;
-                if let Some(s) = parse_set(vs) {
-                    v = Value::Set(s);
-                } else if let Some(str) = parse_str(vs) {
-                    v = Value::Str(str);
-                } else {
-                    return err;
+                match parse_set(vs) {
+                    Ok(s) => {
+                        c.store.insert(ks.to_owned(), (pos, Value::Set(s)));
+                        continue;
+                    }
+                    Err((confident, off)) => {
+                        if confident {
+                            return Err((
+                                Position {
+                                    col: margin + off,
+                                    ..pos
+                                },
+                                ParseError::KV(ParseErrorKV::Set),
+                            ));
+                        }
+                    }
                 }
-                c.store.insert(ks.to_owned(), v);
+                match parse_str(vs) {
+                    Ok(s) => {
+                        c.store.insert(ks.to_owned(), (pos, Value::Str(s)));
+                        continue;
+                    }
+                    Err(off) => {
+                        return Err((
+                            Position {
+                                col: margin + off,
+                                ..pos
+                            },
+                            ParseError::KV(ParseErrorKV::Str),
+                        ))
+                    }
+                }
             } else {
-                return err;
+                return Err((
+                    Position { col: 3, ..pos },
+                    ParseError::KV(ParseErrorKV::Unknown),
+                ));
             }
         } else {
+            let t = match parse_trans(inst, nr_trans_item) {
+                None => return Err((pos, ParseError::Trans)),
+                Some(t) => t,
+            };
             // Transition
-            let err = Err(ParseError {
-                error: ParseErrorType::Trans,
-                inst: line.to_owned(),
-                row,
-                ..Default::default()
-            });
-            c.trans.push(match parse_trans(inst) {
-                None => return err,
-                Some(t) => {
-                    if t.len() != nr_trans_item {
-                        return err;
-                    }
-                    t
-                }
-            });
+            c.trans.push((pos, t))
         }
     }
 

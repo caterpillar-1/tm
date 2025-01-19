@@ -1,8 +1,6 @@
+#[allow(non_snake_case, non_camel_case_types)]
+mod automata;
 mod parse;
-#[allow(non_snake_case, non_camel_case_types, unused)]
-mod pda;
-#[allow(non_snake_case, non_camel_case_types, unused)]
-mod tm;
 
 use clap::Parser;
 use std::io::Read;
@@ -12,10 +10,19 @@ use std::io::Read;
 struct Arguments {
     #[arg(short, long, action = clap::ArgAction::SetTrue, help = "show step by step execution trace")]
     verbose: bool,
-    #[arg(id = "machine", help = "pda (*.pda) or tm (*.tm) description")]
+    #[arg(
+        id = "machine",
+        help = "dfa (*.dfa), pda (*.pda) or tm (*.tm) description"
+    )]
     program: String,
     #[arg(id = "input")]
     input: String,
+}
+
+enum Mode {
+    Dfa,
+    Pda,
+    Tm,
 }
 
 fn main() {
@@ -35,142 +42,122 @@ fn main() {
     let banner_end = banner("END");
     let banner_split = "-".repeat(45);
 
-    if args.program.ends_with(".pda") {
-        let machine = match program.parse::<pda::PushDownAutomata>() {
+    if args.verbose {
+        println!("Input: {}", args.input);
+    }
+
+    let mode: Mode;
+
+    let mut arch_state: Box<dyn automata::ArchState>;
+
+    if args.program.ends_with(".dfa") {
+        mode = Mode::Dfa;
+        unimplemented!()
+    } else if args.program.ends_with(".pda") {
+        mode = Mode::Pda;
+        let machine: automata::PushDownAutomata = match program.parse() {
             Ok(m) => m,
-            Err(e) => {
-                if args.verbose {
-                    eprintln!("{}", banner_err);
-                    eprintln!("{:?}", e);
-                    eprintln!("{}", banner_end);
-                } else {
-                    eprintln!("syntax error");
-                }
+            Err((pos, err)) => {
+                eprintln!("{}", banner_err);
+                eprint!("{}", pos);
+                eprintln!("{:?}", err);
+                eprintln!("{}", banner_end);
                 std::process::exit(1);
             }
         };
-        if args.verbose {
-            println!("Input: {}", args.input);
-        }
-
-        let mut arch_state = match pda::ArchState::new(machine, &args.input) {
-            Ok(m) => m,
-            Err(e) => match e {
-                pda::Exception::InvalidInput { col } => {
-                    eprintln!("{}", banner_err);
-                    eprintln!(
-                        "error: '{}' was not declared in the set of input symbols",
-                        args.input.chars().nth(col).unwrap()
-                    );
-                    eprintln!("Input: {}", args.input);
-                    eprintln!("{}^", " ".repeat(7 + col));
-                    eprintln!("{}", banner_end);
-                    std::process::exit(1);
-                }
-                _ => panic!(),
-            },
-        };
-
-        if args.verbose {
-            println!("{}", banner_run);
-        }
-        loop {
-            if args.verbose {
-                print!("{}", arch_state);
-                println!("{}", banner_split);
-            }
-
-            use pda::Exception::*;
-            match arch_state.step() {
-                Ok(_) => {}
-                Err(e @ (Accept | Reject)) => {
-                    match e {
-                        Accept => println!("true"),
-                        Reject => println!("false"),
-                        _ => panic!(),
-                    }
-                    if args.verbose {
-                        println!("{}", banner_end);
-                    }
-                    std::process::exit(0);
-                }
-                _ => panic!(),
-            }
-        }
+        arch_state = Box::new(automata::PdaArchState::new(machine));
     } else if args.program.ends_with(".tm") {
-        let machine = match program.parse::<tm::TuringMachine>() {
+        mode = Mode::Tm;
+        let machine: automata::TuringMachine = match program.parse() {
             Ok(m) => m,
-            Err(e) => {
-                if args.verbose {
-                    eprintln!("{}", banner_err);
-                    use tm::ParseErrorType::*;
-                    match e.error {
-                        Spec(s) => eprintln!("spec error: {:?}", s),
-                        FieldNotFound => eprintln!("field '{}' not found", e.msg),
-                        _ => {
-                            eprintln!("syntax error at line {} offset {}:", e.pc, e.offset);
-                            eprintln!("{}", e.inst);
-                            eprintln!("{}^", " ".repeat(e.offset));
-                        }
-                    }
-                    eprintln!("{}", banner_end);
-                } else {
-                    eprintln!("syntax error");
-                }
+            Err((pos, err)) => {
+                eprintln!("{}", banner_err);
+                eprint!("{}", pos);
+                eprintln!("{:?}", err);
+                eprintln!("{}", banner_end);
                 std::process::exit(1);
             }
         };
+        arch_state = Box::new(automata::TmArchState::new(machine));
+    } else {
+        panic!("Unknown machine type!");
+    }
 
-        if args.verbose {
-            println!("Input: {}", args.input);
-        }
+    let verbose_input_err = |col: usize| {
+        eprintln!("{}", banner_err);
+        eprintln!(
+            "error: '{}' was not declared in the ser of input symbols",
+            args.input.chars().nth(col).unwrap()
+        );
+        eprintln!("Input: {}", args.input);
+        eprintln!("       {}^", " ".repeat(col));
+        eprintln!("{}", banner_end);
+    };
 
-        let mut arch_state = tm::ArchState::new(machine);
-        match arch_state.input(&args.input) {
-            Ok(_) => (),
-            Err(e) => match e {
-                tm::Exception::InvalidInput { input, offset } => {
-                    eprintln!("{}", banner_err);
-                    eprintln!(
-                        "error: '{}' was not declared in the set of input symbols",
-                        input.chars().nth(offset).unwrap()
-                    );
-                    eprintln!("Input: {}", input);
-                    eprintln!("{}^", " ".repeat(7 + offset));
-                    eprintln!("{}", banner_end);
+    match arch_state.input(&args.input) {
+        Ok(_) => (),
+        Err(e) => match e {
+            automata::Exception::Dfa(e) => {}
+            automata::Exception::Pda(e) => match e {
+                automata::pda::Exception::InvalidInput { col } => {
+                    if args.verbose {
+                        verbose_input_err(col);
+                    } else {
+                        eprintln!("Illegal Input");
+                    }
                     std::process::exit(1);
                 }
                 _ => panic!(),
             },
-        }
-
-        if args.verbose {
-            println!("{}", banner_run);
-        }
-        loop {
-            if args.verbose {
-                print!("{}", arch_state);
-                println!("{}", banner_split);
-            }
-
-            use tm::Exception::*;
-            match arch_state.step() {
-                Ok(_) => {}
-                Err(Accept | Reject) => {
-                    if args.verbose {
-                        print!("Result: ");
-                    }
-                    println!("{}", arch_state.result().unwrap());
-                    if args.verbose {
-                        println!("{}", banner_end);
-                    }
-                    std::process::exit(0);
+            automata::Exception::Tm(e) => match e {
+                automata::tm::Exception::InvalidInput { input: _, offset } => {
+                    verbose_input_err(offset);
+                    std::process::exit(1);
                 }
                 _ => panic!(),
+            },
+        },
+    }
+
+    if args.verbose {
+        println!("{}", banner_run);
+    }
+
+    loop {
+        if args.verbose {
+            print!("{}", arch_state);
+            println!("{}", banner_split);
+        }
+        match arch_state.step() {
+            Ok(_) => (),
+            Err(e) => {
+                match e {
+                    automata::Exception::Dfa(_e) => panic!(),
+                    automata::Exception::Pda(e) => match e {
+                        automata::pda::Exception::Accept => {
+                            println!("true");
+                        }
+                        automata::pda::Exception::Reject => {
+                            println!("false");
+                        }
+                        _ => panic!(),
+                    },
+                    automata::Exception::Tm(e) => match e {
+                        automata::tm::Exception::Reject(s) | automata::tm::Exception::Accept(s) => {
+                            if args.verbose {
+                                println!("Result: {}", s);
+                            } else {
+                                println!("{}", s);
+                            }
+                        }
+                        _ => panic!(),
+                    },
+                }
+                if args.verbose {
+                    println!("{}", banner_end);
+                }
+                std::process::exit(0);
             }
         }
-    } else {
-        log::error!("machine is not pda or tm");
-        std::process::exit(1);
     }
 }
